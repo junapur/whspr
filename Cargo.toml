@@ -1,0 +1,10 @@
+[package]
+name = "whspr"
+description = "A CLI tool for Whisper."
+repository = "https://github.com/junapur/whspr"
+authors = ["June <junapur@proton.me>"]
+license = "MIT"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
