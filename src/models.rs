@@ -1,3 +1,9 @@
+use color_eyre::{eyre::Result, eyre::WrapErr};
+use sha2::{Digest, Sha256};
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
+
 #[allow(dead_code)]
 pub struct Model {
     pub name: &'static str,
@@ -8,6 +14,32 @@ pub struct Model {
 #[allow(dead_code)]
 pub fn get_model(name: &str) -> Option<&'static Model> {
     MODELS.iter().find(|model| model.name == name)
+}
+
+#[allow(dead_code)]
+fn validate_hash(file_path: impl AsRef<Path>, expected: &str) -> Result<bool> {
+    let path = file_path.as_ref();
+
+    let mut file =
+        File::open(path).wrap_err_with(|| format!("Failed to open {}", path.display()))?;
+
+    let mut hasher = Sha256::new();
+    let mut buffer = [0; 4096];
+
+    loop {
+        let bytes_read = file
+            .read(&mut buffer)
+            .wrap_err_with(|| format!("Failed to read from {}", path.display()))?;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    let result = format!("{:x}", hasher.finalize());
+    Ok(result.eq_ignore_ascii_case(expected))
 }
 
 #[allow(dead_code)]
