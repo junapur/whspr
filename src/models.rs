@@ -1,8 +1,10 @@
-use color_eyre::{eyre::Result, eyre::WrapErr};
+use color_eyre::{eyre::OptionExt, eyre::Result, eyre::WrapErr, eyre::eyre};
+use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
-use std::fs::File;
-use std::io::Read;
+use std::fs::{self, File};
+use std::io::{self, Read};
 use std::path::Path;
+use tracing::{error, info, warn};
 
 #[allow(dead_code)]
 pub struct Model {
@@ -14,6 +16,64 @@ pub struct Model {
 #[allow(dead_code)]
 pub fn get_model(name: &str) -> Option<&'static Model> {
     MODELS.iter().find(|model| model.name == name)
+}
+
+#[allow(dead_code)]
+pub fn download_model(name: &str) -> Result<()> {
+    let model = get_model(name).ok_or_eyre("Model not found")?;
+
+    let model_dir = dirs::data_dir()
+        .ok_or_eyre("Failed to get data directory")?
+        .join("whspr/models");
+
+    let model_path = model_dir.join(format!("{}.bin", model.name));
+
+    fs::create_dir_all(&model_dir)
+        .wrap_err_with(|| format!("Failed to create models dir at {}", model_path.display()))?;
+
+    if model_path.exists() {
+        if validate_hash(&model_path, model.sha_256)? {
+            info!("Model already exists at {}", model_path.display());
+            return Ok(());
+        }
+
+        warn!("Model already exists but has invalid hash, removing and re-downloading");
+        fs::remove_file(&model_path)
+            .wrap_err_with(|| format!("Failed to remove model at {}", model_path.display()))?;
+    }
+
+    let url = format!(
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin",
+        model.name
+    );
+
+    info!("Downloading model from {}", url);
+
+    let client = Client::new();
+
+    let mut response = client
+        .get(&url)
+        .send()
+        .and_then(|r| r.error_for_status())
+        .wrap_err_with(|| format!("Failed to download from {}", url))?;
+
+    let mut file = File::create(&model_path)
+        .wrap_err_with(|| format!("Failed to create file at {}", model_path.display()))?;
+
+    io::copy(&mut response, &mut file)
+        .wrap_err_with(|| format!("Failed to write to {}", model_path.display()))?;
+
+    if !validate_hash(&model_path, model.sha_256)? {
+        error!("Downloaded model has invalid hash, removing it");
+
+        fs::remove_file(&model_path)
+            .wrap_err_with(|| format!("Failed to remove model at {}", model_path.display()))?;
+
+        return Err(eyre!("Downloaded model has invalid hash"));
+    }
+
+    info!("Model '{}' downloaded successfully!", name);
+    Ok(())
 }
 
 #[allow(dead_code)]
