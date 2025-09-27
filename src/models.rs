@@ -32,12 +32,14 @@ pub fn download_model(name: &str) -> Result<()> {
         .wrap_err_with(|| format!("Failed to create models dir at {}", model_path.display()))?;
 
     if model_path.exists() {
+        info!("Found existing model, verifying checksum");
+
         if validate_hash(&model_path, model.sha_256)? {
-            info!("Model already exists at {}", model_path.display());
+            info!("Model '{}' is already installed!", model.name);
             return Ok(());
         }
 
-        warn!("Model already exists but has invalid hash, removing and re-downloading");
+        warn!("Existing model has an invalid checksum, re-installing");
         fs::remove_file(&model_path)
             .wrap_err_with(|| format!("Failed to remove model at {}", model_path.display()))?;
     }
@@ -63,16 +65,17 @@ pub fn download_model(name: &str) -> Result<()> {
     io::copy(&mut response, &mut file)
         .wrap_err_with(|| format!("Failed to write to {}", model_path.display()))?;
 
+    info!("Verifying model checksum");
     if !validate_hash(&model_path, model.sha_256)? {
-        error!("Downloaded model has invalid hash, removing it");
+        error!("Checksum verification failed, cleaning up");
 
         fs::remove_file(&model_path)
             .wrap_err_with(|| format!("Failed to remove model at {}", model_path.display()))?;
 
-        return Err(eyre!("Downloaded model has invalid hash"));
+        return Err(eyre!("Downloaded model has an invalid checksum"));
     }
 
-    info!("Model '{}' downloaded successfully!", name);
+    info!("Model '{}' installed successfully!", model.name);
     Ok(())
 }
 
